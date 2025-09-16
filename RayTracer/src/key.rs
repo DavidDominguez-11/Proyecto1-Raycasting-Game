@@ -1,14 +1,14 @@
 use raylib::prelude::*;
 use crate::textures::TextureManager;
 
-pub struct Enemy {
+pub struct Key {
     pub pos: Vector2,
     pub texture_key: char,
 }
 
-impl Enemy {
+impl Key {
     pub fn new(x: f32, y: f32, texture_key: char) -> Self {
-        Enemy {
+        Key {
             pos: Vector2::new(x, y), 
             texture_key,
         }

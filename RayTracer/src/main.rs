@@ -7,7 +7,7 @@ mod maze;
 mod player;
 mod caster;
 mod textures;
-mod enemy;
+mod key;
 
 use raylib::prelude::*;
 use std::thread;
@@ -18,17 +18,17 @@ use maze::{Maze,load_maze};
 use caster::{cast_ray, Intersect};
 use std::f32::consts::PI;
 use textures::TextureManager;
-use enemy::Enemy;
+use key::Key;
 
 const TRANSPARENT_COLOR: Color = Color::new(0, 0, 0, 0);
 
 fn draw_sprite(
     framebuffer: &mut Framebuffer,
     player: &Player,
-    enemy: &Enemy,
+    key: &Key,
     texture_manager: &TextureManager
 ) {
-    let sprite_a = (enemy.pos.y - player.pos.y).atan2(enemy.pos.x - player.pos.x);
+    let sprite_a = (key.pos.y - player.pos.y).atan2(key.pos.x - player.pos.x);
     let mut angle_diff = sprite_a - player.a;
     while angle_diff > PI {
         angle_diff -= 2.0 * PI;
@@ -41,7 +41,7 @@ fn draw_sprite(
         return;
     }
 
-    let sprite_d = ((player.pos.x - enemy.pos.x).powi(2) + (player.pos.y - enemy.pos.y).powi(2)).sqrt();
+    let sprite_d = ((player.pos.x - key.pos.x).powi(2) + (player.pos.y - key.pos.y).powi(2)).sqrt();
 
     // near plane           far plane
     if sprite_d < 50.0 || sprite_d > 1000.0 {
@@ -65,7 +65,7 @@ fn draw_sprite(
             let tx = ((x - start_x) * 128 / sprite_size_usize) as u32;
             let ty = ((y - start_y) * 128 / sprite_size_usize) as u32;
 
-            let color = texture_manager.get_pixel_color(enemy.texture_key, tx, ty);
+            let color = texture_manager.get_pixel_color(key.texture_key, tx, ty);
             
             if color != TRANSPARENT_COLOR {
                 framebuffer.set_current_color(color);
@@ -162,17 +162,17 @@ pub fn render_3d(
 
 }
 
-fn render_enemies(
+fn render_key(
     framebuffer: &mut Framebuffer,
     player: &Player,
     texture_cache: &TextureManager,
 ) {
-    let enemies = vec![
-        Enemy::new(250.0, 250.0, 'e'),
+    let key = vec![
+        Key::new(250.0, 250.0, 'k'),
     ];
 
-    for enemy in enemies {
-        draw_sprite(framebuffer, &player, &enemy, texture_cache);
+    for key in key {
+        draw_sprite(framebuffer, &player, &key, texture_cache);
     }
 }
 
@@ -239,10 +239,8 @@ fn main() {
             render_maze(&mut framebuffer, &maze, block_size, &player);
         } else {
             render_3d(&mut framebuffer, &maze, block_size, &player, &texture_cache);
-            render_enemies(&mut framebuffer, &player, &texture_cache);
+            render_key(&mut framebuffer, &player, &texture_cache);
         }
-
-
         // 3. swap buffers
         framebuffer.swap_buffers(&mut window, &raylib_thread);
 
