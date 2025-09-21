@@ -8,6 +8,7 @@ mod player;
 mod caster;
 mod textures;
 mod key;
+mod text;
 
 use raylib::prelude::*;
 use std::thread;
@@ -19,6 +20,7 @@ use caster::{cast_ray, Intersect};
 use std::f32::consts::PI;
 use textures::TextureManager;
 use key::Key;
+use text::Font;
 
 const TRANSPARENT_COLOR: Color = Color::new(0, 0, 0, 0);
 
@@ -245,6 +247,99 @@ fn render_minimap(
     framebuffer.draw_line(player_minimap_x, player_minimap_y, direction_x, direction_y);
 }
 
+#[derive(PartialEq)]
+enum GameState {
+    MainMenu,
+    Playing,
+}
+
+fn draw_main_menu(framebuffer: &mut Framebuffer, selected_level: i32) {
+    let width = framebuffer.width;
+    let height = framebuffer.height;
+    
+    // Fondo simple
+    framebuffer.set_current_color(Color::BLACK);
+    for y in 0..height {
+        for x in 0..width {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    
+    // Título - líneas de píxeles
+    framebuffer.set_current_color(Color::RED);
+    for x in width/2-80..width/2+80 {
+        for y in 90..95 {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    for x in width/2-80..width/2+80 {
+        for y in 105..110 {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    
+    // Opciones de nivel
+    for level in 1..=3 {
+        let y_pos = 200 + (level - 1) * 50;
+        
+        if level == selected_level {
+            framebuffer.set_current_color(Color::GREEN);
+            // Dibujar selector ">"
+            for x in width/2-40..width/2-35 {
+                for y in y_pos..y_pos+5 {
+                    framebuffer.set_pixel(x, y);
+                }
+            }
+        } else {
+            framebuffer.set_current_color(Color::WHITE);
+        }
+        
+        // Dibujar texto "NIVEL X"
+        for x in width/2-30..width/2+30 {
+            for y in y_pos..y_pos+5 {
+                framebuffer.set_pixel(x, y);
+            }
+        }
+        
+        // Dibujar número de nivel
+        framebuffer.set_current_color(if level == selected_level { Color::GREEN } else { Color::WHITE });
+        for x in width/2+35..width/2+40 {
+            for y in y_pos..y_pos+5 {
+                framebuffer.set_pixel(x, y);
+            }
+        }
+    }
+    
+    // Instrucciones
+    framebuffer.set_current_color(Color::GRAY);
+    for x in width/2-60..width/2+60 {
+        for y in 380..385 {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    for x in width/2-80..width/2+80 {
+        for y in 430..435 {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+}
+
+// Función simple para dibujar texto con bloques de píxeles
+fn draw_simple_text(framebuffer: &mut Framebuffer, text: &str, x: i32, y: i32, scale: i32) {
+    for (i, _c) in text.chars().enumerate() {
+        let char_x = x + (i as i32 * 8 * scale);
+        
+        // Dibujar un bloque rectangular por cada carácter (simplificado)
+        for dx in 0..6*scale {
+            for dy in 0..8*scale {
+                if dx % scale == 0 && dy % scale == 0 {
+                    framebuffer.set_pixel(char_x + dx, y + dy);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     let window_width = 1300;
     let window_height = 900;
@@ -265,7 +360,10 @@ fn main() {
     framebuffer.set_background_color(Color::new(80, 80, 200, 255));
 
     // Load the maze once before the loop
-    let maze = load_maze("maze.txt");
+    let font = Font::new();
+    let mut game_state = GameState::MainMenu;
+    let mut selected_level = 1;
+    let mut maze: Maze = Vec::new();
     let mut player = Player{
         pos: Vector2::new(150.0,150.0), 
         a: PI/2.0,
@@ -278,53 +376,123 @@ fn main() {
     let minimap_position = (window_width as i32 - minimap_size as i32 - 20, 20); // Esquina superior derecha
     
     while !window.window_should_close() {
-        // 1. clear framebuffer
-        framebuffer.clear();
-        
-        let half_height = window_height as u32 / 2;
-        //cielo
-        framebuffer.set_current_color(Color::new(135, 206, 235, 255));
-        for y in 0..half_height {
-            for x in 0..window_width as u32 {
-                framebuffer.set_pixel(x as i32, y as i32);
+        match game_state {
+            GameState::MainMenu => {
+                // Procesar entrada en el menú
+                if window.is_key_pressed(KeyboardKey::KEY_UP) {
+                    selected_level = if selected_level > 1 { selected_level - 1 } else { 3 };
+                }
+                if window.is_key_pressed(KeyboardKey::KEY_DOWN) {
+                    selected_level = if selected_level < 3 { selected_level + 1 } else { 1 };
+                }
+                if window.is_key_pressed(KeyboardKey::KEY_ENTER) {
+                    // Cargar el nivel seleccionado
+                    let maze_file = match selected_level {
+                        1 => "maze1.txt",
+                        2 => "maze2.txt",
+                        3 => "maze3.txt",
+                        _ => "maze1.txt",
+                    };
+                    
+                    maze = load_maze(maze_file);
+                    game_state = GameState::Playing;
+                    
+                    // Posicionar al jugador en un lugar seguro
+                    for (j, row) in maze.iter().enumerate() {
+                        for (i, &cell) in row.iter().enumerate() {
+                            if cell == ' ' {
+                                player.pos.x = (i * block_size + block_size / 2) as f32;
+                                player.pos.y = (j * block_size + block_size / 2) as f32;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Dibujar menú principal
+                framebuffer.clear();
+                
+                // Fondo
+                framebuffer.set_current_color(Color::new(20, 20, 40, 255));
+                for y in 0..framebuffer.height {
+                    for x in 0..framebuffer.width {
+                        framebuffer.set_pixel(x, y);
+                    }
+                }
+                
+                // Guardar el ancho en una variable local para evitar problemas de préstamo
+                let screen_width = framebuffer.width;
+                
+                // Título
+                font.draw_text(&mut framebuffer, "RAYCASTING GAME", 
+                    screen_width / 2 - 45, 100, 2, Color::YELLOW);
+                
+                // Subtítulo
+                font.draw_text(&mut framebuffer, "SELECCIONA NIVEL", 
+                    screen_width / 2 - 45, 180, 1, Color::WHITE);
+                
+                // Opciones de nivel
+                for level in 1..=3 {
+                    let y_pos = 250 + (level - 1) * 50;
+                    
+                    if level == selected_level {
+                        font.draw_text(&mut framebuffer, &format!("> NIVEL {} <", level), 
+                            screen_width / 2 - 35, y_pos, 1, Color::GREEN);
+                    } else {
+                        font.draw_text(&mut framebuffer, &format!("  NIVEL {}  ", level), 
+                            screen_width / 2 - 35, y_pos, 1, Color::LIGHTGRAY);
+                    }
+                }
+            }
+            
+            GameState::Playing => {
+                // Código de juego existente (sin cambios)
+                framebuffer.clear();
+                
+                let half_height = window_height as u32 / 2;
+                //cielo
+                framebuffer.set_current_color(Color::new(135, 206, 235, 255));
+                for y in 0..half_height {
+                    for x in 0..window_width as u32 {
+                        framebuffer.set_pixel(x as i32, y as i32);
+                    }
+                }
+                //piso
+                framebuffer.set_current_color(Color::new(168, 168, 168, 168));
+                for y in half_height..window_height as u32 {
+                    for x in 0..window_width as u32 {
+                        framebuffer.set_pixel(x as i32, y as i32);
+                    }
+                }
+
+                process_events(&window, &mut player, &maze, block_size);
+
+                if window.is_key_down(KeyboardKey::KEY_M) {
+                    render_maze(&mut framebuffer, &maze, block_size, &player);
+                } else {
+                    render_3d(&mut framebuffer, &maze, block_size, &player, &texture_cache);
+                    render_key(&mut framebuffer, &player, &texture_cache);
+                }
+                
+                if !window.is_key_down(KeyboardKey::KEY_M) {
+                    render_minimap(
+                        &mut framebuffer, 
+                        &maze, 
+                        block_size, 
+                        &player, 
+                        minimap_size, 
+                        minimap_position
+                    );
+                }
+                
+                // Volver al menú si se presiona ESC
+                if window.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    game_state = GameState::MainMenu;
+                }
             }
         }
-        //piso
-        framebuffer.set_current_color(Color::new(168, 168, 168, 168));
-        for y in half_height..window_height as u32 {
-            for x in 0..window_width as u32 {
-                framebuffer.set_pixel(x as i32, y as i32);
-            }
-        }
-
-        // 1.1 process events
-        process_events(&window, &mut player, &maze, block_size);
-
-        // 2. draw the maze, passing the maze and block size
-        if window.is_key_down(KeyboardKey::KEY_M) {
-            // Modo 2D completo (vista desde arriba)
-            render_maze(&mut framebuffer, &maze, block_size, &player);
-        } else {
-            // Modo 3D normal
-            render_3d(&mut framebuffer, &maze, block_size, &player, &texture_cache);
-            render_key(&mut framebuffer, &player, &texture_cache);
-        }
         
-        // 3. Dibujar minimapa estático siempre visible (excepto en modo 2D completo)
-        if !window.is_key_down(KeyboardKey::KEY_M) {
-            render_minimap(
-                &mut framebuffer, 
-                &maze, 
-                block_size, 
-                &player, 
-                minimap_size, 
-                minimap_position
-            );
-        }
-        
-        // 4. swap buffers
         framebuffer.swap_buffers(&mut window, &raylib_thread);
-
         thread::sleep(Duration::from_millis(16));
     }
 }
