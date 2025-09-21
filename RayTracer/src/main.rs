@@ -176,6 +176,75 @@ fn render_key(
     }
 }
 
+fn render_minimap(
+    framebuffer: &mut Framebuffer,
+    maze: &Maze,
+    block_size: usize,
+    player: &Player,
+    minimap_size: usize,
+    position: (i32, i32),
+) {
+    let minimap_block_size = minimap_size / maze[0].len();
+    let (pos_x, pos_y) = position;
+    
+    // Fondo semitransparente del minimapa
+    framebuffer.set_current_color(Color::new(0, 0, 0, 180));
+    for x in pos_x..pos_x + minimap_size as i32 {
+        for y in pos_y..pos_y + minimap_size as i32 {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    
+    // Borde del minimapa
+    framebuffer.set_current_color(Color::WHITE);
+    for x in pos_x..pos_x + minimap_size as i32 {
+        framebuffer.set_pixel(x, pos_y);
+        framebuffer.set_pixel(x, pos_y + minimap_size as i32 - 1);
+    }
+    for y in pos_y..pos_y + minimap_size as i32 {
+        framebuffer.set_pixel(pos_x, y);
+        framebuffer.set_pixel(pos_x + minimap_size as i32 - 1, y);
+    }
+    
+    // Dibujar el laberinto en el minimapa
+    for (row_index, row) in maze.iter().enumerate() {
+        for (col_index, &cell) in row.iter().enumerate() {
+            let xo = pos_x + (col_index * minimap_block_size) as i32;
+            let yo = pos_y + (row_index * minimap_block_size) as i32;
+            
+            match cell {
+                ' ' => framebuffer.set_current_color(Color::DARKGRAY),
+                'g' => framebuffer.set_current_color(Color::GREEN), // Meta
+                'k' => framebuffer.set_current_color(Color::GOLD),  // Llave
+                _ => framebuffer.set_current_color(Color::RED),     // Paredes
+            }
+            
+            for x in xo..xo + minimap_block_size as i32 {
+                for y in yo..yo + minimap_block_size as i32 {
+                    framebuffer.set_pixel(x, y);
+                }
+            }
+        }
+    }
+    
+    // Dibujar al jugador en el minimapa (punto más grande)
+    let player_minimap_x = pos_x + (player.pos.x as usize / block_size * minimap_block_size) as i32;
+    let player_minimap_y = pos_y + (player.pos.y as usize / block_size * minimap_block_size) as i32;
+    
+    framebuffer.set_current_color(Color::BLUE);
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            framebuffer.set_pixel(player_minimap_x + dx, player_minimap_y + dy);
+        }
+    }
+    
+    // Dibujar dirección del jugador
+    let direction_x = player_minimap_x + (player.a.cos() * 8.0) as i32;
+    let direction_y = player_minimap_y + (player.a.sin() * 8.0) as i32;
+    framebuffer.set_current_color(Color::YELLOW);
+    framebuffer.draw_line(player_minimap_x, player_minimap_y, direction_x, direction_y);
+}
+
 fn main() {
     let window_width = 1300;
     let window_height = 900;
@@ -205,6 +274,9 @@ fn main() {
 
     let texture_cache = TextureManager::new(&mut window, &raylib_thread);
 
+    let minimap_size = 150; // Tamaño del minimapa en píxeles
+    let minimap_position = (window_width as i32 - minimap_size as i32 - 20, 20); // Esquina superior derecha
+    
     while !window.window_should_close() {
         // 1. clear framebuffer
         framebuffer.clear();
@@ -229,19 +301,28 @@ fn main() {
         process_events(&window, &mut player, &maze, block_size);
 
         // 2. draw the maze, passing the maze and block size
-        let mut mode = "3D";
-        
         if window.is_key_down(KeyboardKey::KEY_M) {
-            mode = "2D";
-        }
-
-        if mode == "2D" {
+            // Modo 2D completo (vista desde arriba)
             render_maze(&mut framebuffer, &maze, block_size, &player);
         } else {
+            // Modo 3D normal
             render_3d(&mut framebuffer, &maze, block_size, &player, &texture_cache);
             render_key(&mut framebuffer, &player, &texture_cache);
         }
-        // 3. swap buffers
+        
+        // 3. Dibujar minimapa estático siempre visible (excepto en modo 2D completo)
+        if !window.is_key_down(KeyboardKey::KEY_M) {
+            render_minimap(
+                &mut framebuffer, 
+                &maze, 
+                block_size, 
+                &player, 
+                minimap_size, 
+                minimap_position
+            );
+        }
+        
+        // 4. swap buffers
         framebuffer.swap_buffers(&mut window, &raylib_thread);
 
         thread::sleep(Duration::from_millis(16));

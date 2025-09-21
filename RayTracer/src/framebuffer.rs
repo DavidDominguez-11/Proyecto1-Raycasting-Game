@@ -55,5 +55,34 @@ impl Framebuffer {
             renderer.clear_background(self.background_color);
             renderer.draw_texture(&texture, 0, 0, Color::WHITE);
         }
-    } 
+    }
+
+    pub fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+        // Implementación del algoritmo de Bresenham para dibujar líneas
+        let dx = (x2 - x1).abs();
+        let dy = (y2 - y1).abs();
+        let sx = if x1 < x2 { 1 } else { -1 };
+        let sy = if y1 < y2 { 1 } else { -1 };
+        let mut err = dx - dy;
+        let mut x = x1;
+        let mut y = y1;
+        
+        loop {
+            self.set_pixel(x, y);
+            
+            if x == x2 && y == y2 {
+                break;
+            }
+            
+            let e2 = 2 * err;
+            if e2 > -dy {
+                err -= dy;
+                x += sx;
+            }
+            if e2 < dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
 }
