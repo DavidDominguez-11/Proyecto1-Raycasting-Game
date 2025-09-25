@@ -29,7 +29,9 @@ pub fn cast_ray(
         let i = x / block_size;
         let j = y / block_size;
         
-        if maze[j][i] != ' ' {
+        // Considerar 'g' como espacio vacío para el raycasting
+        // Solo paredes reales ('+', '-', '|', etc.) deben bloquear los rayos
+        if maze[j][i] != ' ' && maze[j][i] != 'g' {
             let hitx = x - i * block_size;
             let hity = y - j * block_size;
             let mut maxhit = hity;
@@ -38,7 +40,7 @@ pub fn cast_ray(
                 maxhit = hitx;
             }
 
-            let x = ((maxhit as f32* 128.0) / block_size as f32) as usize; //este 128 tiene que ver con el tamaño de la textura (el ancho), cambiar tanto en main como en caster
+            let x = ((maxhit as f32* 128.0) / block_size as f32) as usize;
             return Intersect {
                 distance: d,
                 impact: maze[j][i],

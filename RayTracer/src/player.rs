@@ -9,7 +9,6 @@ pub struct Player {
     pub fov: f32,
 }
 
-// La función ya no devuelve un valor booleano. Ahora solo gestiona el movimiento.
 pub fn process_events(
     window: &RaylibHandle,
     player: &mut Player,
@@ -17,9 +16,9 @@ pub fn process_events(
     block_size: usize,
 ) {
     const MOVE_SPEED: f32 = 8.0;
-    const ROTATION_SPEED: f32 = PI / 20.0;
+    const ROTATION_SPEED: f32 = std::f32::consts::PI / 20.0;
 
-    //Rotación 
+    // Rotación 
     if window.is_key_down(KeyboardKey::KEY_LEFT) {
         player.a -= ROTATION_SPEED;
     }
@@ -27,7 +26,7 @@ pub fn process_events(
         player.a += ROTATION_SPEED;
     }
 
-    //Movimiento
+    // Movimiento
     let mut next_pos = player.pos;
     let mut moved = false;
 
@@ -42,17 +41,18 @@ pub fn process_events(
         moved = true;
     }
 
-    //Si el jugador intentó moverse, verificamos la nueva posición.
+    // Si el jugador intentó moverse, verificamos la nueva posición.
     if moved {
         let grid_x = next_pos.x as usize / block_size;
         let grid_y = next_pos.y as usize / block_size;
 
-        //Verificamos si la nueva posición es un espacio vacío y está dentro de los límites.
-        if grid_y < maze.len() && grid_x < maze[grid_y].len() && maze[grid_y][grid_x] == ' ' {
-            // Si el camino está libre, actualizamos la posición del jugador.
+        // Verificamos si la nueva posición es un espacio vacío O la meta ('g')
+        // y está dentro de los límites.
+        if grid_y < maze.len() && grid_x < maze[grid_y].len() && 
+           (maze[grid_y][grid_x] == ' ' || maze[grid_y][grid_x] == 'g') {
+            // Si el camino está libre (espacio o meta), actualizamos la posición.
             player.pos = next_pos;
         }
         // Si la condición no se cumple (es una pared), no hacemos nada.
-        // El jugador simplemente no se moverá, quedando bloqueado por la pared.
     }
 }

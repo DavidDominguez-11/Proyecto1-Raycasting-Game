@@ -132,7 +132,14 @@ fn draw_cell(
         return;
     }
 
-    framebuffer.set_current_color(Color::RED);
+    // Asignar colores diferentes según el tipo de celda
+    let color = match cell {
+        'g' => Color::GREEN,    // Meta - verde
+        'k' => Color::GOLD,     // Llave - dorado
+        _ => Color::RED,        // Paredes - rojo
+    };
+
+    framebuffer.set_current_color(color);
 
     for x in xo..xo + block_size {
         for y in yo..yo + block_size {
@@ -177,10 +184,7 @@ pub fn render_3d(
     texture_cache: &TextureManager,
 ) {
     let num_rays = framebuffer.width;
-
     let hh = framebuffer.height as f32/ 2.0;
-
-    framebuffer.set_current_color(Color::RED);
 
     for i in 0..num_rays {
         let current_ray = i as f32 / num_rays as f32;
@@ -190,22 +194,31 @@ pub fn render_3d(
         let d = intersect.distance;
         let c = intersect.impact;
         let corrected_distance = d * angle_diff.cos() as f32;
-        let stake_height = (hh / corrected_distance)*100.0; //factor de escala rendering
+        let stake_height = (hh / corrected_distance)*100.0;
         let half_stake_height = stake_height / 2.0;
         let stake_top = (hh - half_stake_height) as usize;
         let stake_bottom = (hh + half_stake_height) as usize;
 
         for y in stake_top..stake_bottom {
             let tx = intersect.tx;
-            let ty = ((y as f32 - stake_top as f32) / (stake_bottom as f32 - stake_top as f32))*128.0; //el 128 tiene que ver con el tamaño de la textura (el ancho), cambiar tanto en main como en caster
-            let color = texture_cache.get_pixel_color(c, tx as u32, ty as u32);
+            let ty = ((y as f32 - stake_top as f32) / (stake_bottom as f32 - stake_top as f32))*128.0;
+            
+            // Si es la meta 'g', usar color verde en lugar de textura
+            let color = if c == 'g' {
+                // Crear un patrón de rayas verdes para la meta
+                if (y / 10) % 2 == 0 {
+                    Color::GREEN
+                } else {
+                    Color::DARKGREEN
+                }
+            } else {
+                texture_cache.get_pixel_color(c, tx as u32, ty as u32)
+            };
 
             framebuffer.set_current_color(color);
             framebuffer.set_pixel(i, y as i32);
         }
-
     }
-
 }
 
 fn render_key(
@@ -451,13 +464,11 @@ fn check_key_collision(player: &Player, keys: &[Key], game_state: &mut GameState
 }
 
 fn check_goal_collision(player: &Player, maze: &Maze, game_state: &GameState, block_size: usize) -> bool {
-    // Convertir la posición continua del jugador a coordenadas de grid del laberinto
+    // Simplemente verificar si está en la celda 'g' y tiene la llave
     let player_grid_x = (player.pos.x / block_size as f32) as usize;
     let player_grid_y = (player.pos.y / block_size as f32) as usize;
     
-    // Verificar que las coordenadas estén dentro de los límites del laberinto
     if player_grid_y < maze.len() && player_grid_x < maze[player_grid_y].len() {
-        // Verificar si el jugador está en la casilla verde Y tiene la llave
         let cell = maze[player_grid_y][player_grid_x];
         if cell == 'g' && game_state.has_key {
             return true;
