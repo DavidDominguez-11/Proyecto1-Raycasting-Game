@@ -12,7 +12,7 @@ mod text;
 
 use raylib::prelude::*;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use player::{Player, process_events};
 use framebuffer::Framebuffer;
 use maze::{Maze,load_maze};
@@ -23,6 +23,50 @@ use key::Key;
 use text::Font;
 
 const TRANSPARENT_COLOR: Color = Color::new(0, 0, 0, 0);
+const MAX_LIFE: f32 = 999.0; // 60 segundos de vida máxima
+
+struct GameState {
+    life: f32,
+    game_start_time: Instant,
+    has_key: bool,
+}
+
+impl GameState {
+    fn new() -> Self {
+        GameState {
+            life: MAX_LIFE,
+            game_start_time: Instant::now(),
+            has_key: false,
+        }
+    }
+
+    fn update_life(&mut self) {
+        let elapsed = self.game_start_time.elapsed().as_secs_f32();
+        self.life = (MAX_LIFE - elapsed).max(0.0);
+    }
+
+    fn is_alive(&self) -> bool {
+        self.life > 0.0
+    }
+
+    fn collect_key(&mut self) {
+        self.has_key = true;
+    }
+
+    fn reset(&mut self) {
+        self.life = MAX_LIFE;
+        self.game_start_time = Instant::now();
+        self.has_key = false;
+    }
+}
+
+#[derive(PartialEq)]
+enum ScreenState {
+    MainMenu,
+    Playing,
+    Win,
+    Lose,
+}
 
 fn draw_sprite(
     framebuffer: &mut Framebuffer,
@@ -247,10 +291,60 @@ fn render_minimap(
     framebuffer.draw_line(player_minimap_x, player_minimap_y, direction_x, direction_y);
 }
 
-#[derive(PartialEq)]
-enum GameState {
-    MainMenu,
-    Playing,
+fn draw_life_bar(framebuffer: &mut Framebuffer, game_state: &GameState, font: &Font) {
+    let bar_width = 200;
+    let bar_height = 20;
+    let x = 20;
+    let y = 20;
+    
+    // Fondo de la barra de vida
+    framebuffer.set_current_color(Color::DARKGRAY);
+    for dx in 0..bar_width {
+        for dy in 0..bar_height {
+            framebuffer.set_pixel(x + dx, y + dy);
+        }
+    }
+    
+    // Vida actual
+    let life_width = (bar_width as f32 * (game_state.life / MAX_LIFE)) as i32;
+    if life_width > 0 {
+        let life_color = if game_state.life > MAX_LIFE * 0.5 {
+            Color::GREEN
+        } else if game_state.life > MAX_LIFE * 0.25 {
+            Color::YELLOW
+        } else {
+            Color::RED
+        };
+        
+        framebuffer.set_current_color(life_color);
+        for dx in 0..life_width {
+            for dy in 0..bar_height {
+                framebuffer.set_pixel(x + dx, y + dy);
+            }
+        }
+    }
+    
+    // Borde de la barra
+    framebuffer.set_current_color(Color::WHITE);
+    for dx in 0..bar_width {
+        framebuffer.set_pixel(x + dx, y);
+        framebuffer.set_pixel(x + dx, y + bar_height - 1);
+    }
+    for dy in 0..bar_height {
+        framebuffer.set_pixel(x, y + dy);
+        framebuffer.set_pixel(x + bar_width - 1, y + dy);
+    }
+    
+    // Texto de la vida - CORRECCIÓN: quitar &mut
+    let life_text = format!("TIEMPO: {:.1}s", game_state.life);
+    font.draw_text(framebuffer, &life_text, x, y + bar_height + 5, 1, Color::WHITE);
+    
+    // Indicador de llave - CORRECCIÓN: quitar &mut
+    if game_state.has_key {
+        font.draw_text(framebuffer, "LLAVE: ✓", x, y + bar_height + 20, 1, Color::GOLD);
+    } else {
+        font.draw_text(framebuffer, "LLAVE: ✗", x, y + bar_height + 20, 1, Color::GRAY);
+    }
 }
 
 fn draw_main_menu(framebuffer: &mut Framebuffer, selected_level: i32) {
@@ -340,6 +434,88 @@ fn draw_simple_text(framebuffer: &mut Framebuffer, text: &str, x: i32, y: i32, s
     }
 }
 
+fn check_key_collision(player: &Player, keys: &[Key], game_state: &mut GameState, block_size: usize) -> bool {
+    let player_grid_x = (player.pos.x / block_size as f32) as usize;
+    let player_grid_y = (player.pos.y / block_size as f32) as usize;
+    
+    for key in keys {
+        let key_grid_x = (key.pos.x / block_size as f32) as usize;
+        let key_grid_y = (key.pos.y / block_size as f32) as usize;
+        
+        if player_grid_x == key_grid_x && player_grid_y == key_grid_y && !game_state.has_key {
+            game_state.collect_key();
+            return true;
+        }
+    }
+    false
+}
+
+fn check_goal_collision(player: &Player, maze: &Maze, game_state: &GameState, block_size: usize) -> bool {
+    // Convertir la posición continua del jugador a coordenadas de grid del laberinto
+    let player_grid_x = (player.pos.x / block_size as f32) as usize;
+    let player_grid_y = (player.pos.y / block_size as f32) as usize;
+    
+    // Verificar que las coordenadas estén dentro de los límites del laberinto
+    if player_grid_y < maze.len() && player_grid_x < maze[player_grid_y].len() {
+        // Verificar si el jugador está en la casilla verde Y tiene la llave
+        let cell = maze[player_grid_y][player_grid_x];
+        if cell == 'g' && game_state.has_key {
+            return true;
+        }
+    }
+    false
+}
+
+fn draw_win_screen(framebuffer: &mut Framebuffer, font: &Font, game_state: &GameState) {
+    let width = framebuffer.width;
+    let height = framebuffer.height;
+    
+    // Fondo verde de victoria
+    framebuffer.set_current_color(Color::new(0, 100, 0, 255));
+    for y in 0..height {
+        for x in 0..width {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    
+    // Mensaje de victoria - CORRECCIÓN: quitar &mut en todas las llamadas
+    font.draw_text(framebuffer, "¡VICTORIA!", width / 2 - 60, height / 2 - 50, 3, Color::GOLD);
+    font.draw_text(framebuffer, "Encontraste la llave y escapaste!", width / 2 - 120, height / 2, 1, Color::WHITE);
+    
+    let time_used = MAX_LIFE - game_state.life;
+    font.draw_text(framebuffer, &format!("Tiempo: {:.1} segundos", time_used), width / 2 - 80, height / 2 + 30, 1, Color::YELLOW);
+    
+    font.draw_text(framebuffer, "Presiona ESPACIO para jugar otra vez", width / 2 - 140, height / 2 + 80, 1, Color::LIGHTGRAY);
+    font.draw_text(framebuffer, "Presiona ESC para salir al menu", width / 2 - 120, height / 2 + 110, 1, Color::LIGHTGRAY);
+}
+
+fn draw_lose_screen(framebuffer: &mut Framebuffer, font: &Font) {
+    let width = framebuffer.width;
+    let height = framebuffer.height;
+    
+    // Fondo rojo de derrota
+    framebuffer.set_current_color(Color::new(100, 0, 0, 255));
+    for y in 0..height {
+        for x in 0..width {
+            framebuffer.set_pixel(x, y);
+        }
+    }
+    
+    // Mensaje de derrota - CORRECCIÓN: quitar &mut en todas las llamadas
+    font.draw_text(framebuffer, "¡GAME OVER!", width / 2 - 60, height / 2 - 50, 3, Color::RED);
+    font.draw_text(framebuffer, "Se te acabó el tiempo...", width / 2 - 80, height / 2, 1, Color::WHITE);
+    font.draw_text(framebuffer, "No lograste encontrar la llave a tiempo", width / 2 - 140, height / 2 + 30, 1, Color::WHITE);
+    
+    font.draw_text(framebuffer, "Presiona ESPACIO para intentar otra vez", width / 2 - 160, height / 2 + 80, 1, Color::LIGHTGRAY);
+    font.draw_text(framebuffer, "Presiona ESC para salir al menu", width / 2 - 120, height / 2 + 110, 1, Color::LIGHTGRAY);
+}
+
+fn get_keys() -> Vec<Key> {
+    vec![
+        Key::new(250.0, 250.0, 'k'),
+    ]
+}
+
 fn main() {
     let window_width = 1300;
     let window_height = 900;
@@ -347,7 +523,7 @@ fn main() {
 
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
-        .title("Raycaster Example")
+        .title("Raycaster Game - Encuentra la Llave!")
         .log_level(TraceLogLevel::LOG_WARNING)
         .build();
 
@@ -359,9 +535,8 @@ fn main() {
 
     framebuffer.set_background_color(Color::new(80, 80, 200, 255));
 
-    // Load the maze once before the loop
     let font = Font::new();
-    let mut game_state = GameState::MainMenu;
+    let mut screen_state = ScreenState::MainMenu;
     let mut selected_level = 1;
     let mut maze: Maze = Vec::new();
     let mut player = Player{
@@ -371,14 +546,14 @@ fn main() {
     };
 
     let texture_cache = TextureManager::new(&mut window, &raylib_thread);
+    let mut game_state = GameState::new();
 
-    let minimap_size = 150; // Tamaño del minimapa en píxeles
-    let minimap_position = (window_width as i32 - minimap_size as i32 - 20, 20); // Esquina superior derecha
+    let minimap_size = 150;
+    let minimap_position = (window_width as i32 - minimap_size as i32 - 20, 20);
     
     while !window.window_should_close() {
-        match game_state {
-            GameState::MainMenu => {
-                // Procesar entrada en el menú
+        match screen_state {
+            ScreenState::MainMenu => {
                 if window.is_key_pressed(KeyboardKey::KEY_UP) {
                     selected_level = if selected_level > 1 { selected_level - 1 } else { 3 };
                 }
@@ -386,7 +561,6 @@ fn main() {
                     selected_level = if selected_level < 3 { selected_level + 1 } else { 1 };
                 }
                 if window.is_key_pressed(KeyboardKey::KEY_ENTER) {
-                    // Cargar el nivel seleccionado
                     let maze_file = match selected_level {
                         1 => "maze1.txt",
                         2 => "maze2.txt",
@@ -395,7 +569,7 @@ fn main() {
                     };
                     
                     maze = load_maze(maze_file);
-                    game_state = GameState::Playing;
+                    game_state.reset();
                     
                     // Posicionar al jugador en un lugar seguro
                     for (j, row) in maze.iter().enumerate() {
@@ -407,12 +581,13 @@ fn main() {
                             }
                         }
                     }
+                    
+                    screen_state = ScreenState::Playing;
                 }
                 
-                // Dibujar menú principal
                 framebuffer.clear();
                 
-                // Fondo
+                // Dibujar menú principal
                 framebuffer.set_current_color(Color::new(20, 20, 40, 255));
                 for y in 0..framebuffer.height {
                     for x in 0..framebuffer.width {
@@ -420,20 +595,17 @@ fn main() {
                     }
                 }
                 
-                // Guardar el ancho en una variable local para evitar problemas de préstamo
                 let screen_width = framebuffer.width;
                 
-                // Título
                 font.draw_text(&mut framebuffer, "RAYCASTING GAME", 
                     screen_width / 2 - 45, 100, 2, Color::YELLOW);
-                
-                // Subtítulo
+                font.draw_text(&mut framebuffer, "ENCUENTRA LA LLAVE A TIEMPO!", 
+                    screen_width / 2 - 80, 150, 1, Color::GOLD);
                 font.draw_text(&mut framebuffer, "SELECCIONA NIVEL", 
-                    screen_width / 2 - 45, 180, 1, Color::WHITE);
-                
-                // Opciones de nivel
+                    screen_width / 2 - 45, 220, 1, Color::WHITE);
+
                 for level in 1..=3 {
-                    let y_pos = 250 + (level - 1) * 50;
+                    let y_pos = 280 + (level - 1) * 50;
                     
                     if level == selected_level {
                         font.draw_text(&mut framebuffer, &format!("> NIVEL {} <", level), 
@@ -443,21 +615,47 @@ fn main() {
                             screen_width / 2 - 35, y_pos, 1, Color::LIGHTGRAY);
                     }
                 }
+
+                font.draw_text(&mut framebuffer, "Tienes 60 segundos para encontrar la llave", 
+                    screen_width / 2 - 150, 450, 1, Color::LIGHTGRAY);
+                font.draw_text(&mut framebuffer, "y llegar a la salida (casilla verde)", 
+                    screen_width / 2 - 120, 470, 1, Color::LIGHTGRAY);
             }
             
-            GameState::Playing => {
-                // Código de juego existente (sin cambios)
+            ScreenState::Playing => {
                 framebuffer.clear();
                 
+                // Actualizar vida
+                game_state.update_life();
+                
+                // Verificar condiciones de fin de juego
+                if !game_state.is_alive() {
+                    screen_state = ScreenState::Lose;
+                    continue;
+                }
+                
+                let keys = get_keys();
+                if check_key_collision(&player, &keys, &mut game_state, block_size) {
+                    // La llave fue recolectada (se muestra en la UI)
+                }
+                
+                if check_goal_collision(&player, &maze, &game_state, block_size) {
+                    screen_state = ScreenState::Win;
+                    continue;
+                }
+                
+                // Renderizado normal del juego
                 let half_height = window_height as u32 / 2;
-                //cielo
+                
+                // Cielo
                 framebuffer.set_current_color(Color::new(135, 206, 235, 255));
                 for y in 0..half_height {
                     for x in 0..window_width as u32 {
                         framebuffer.set_pixel(x as i32, y as i32);
                     }
                 }
-                //piso
+                
+                // Piso
                 framebuffer.set_current_color(Color::new(168, 168, 168, 168));
                 for y in half_height..window_height as u32 {
                     for x in 0..window_width as u32 {
@@ -471,8 +669,16 @@ fn main() {
                     render_maze(&mut framebuffer, &maze, block_size, &player);
                 } else {
                     render_3d(&mut framebuffer, &maze, block_size, &player, &texture_cache);
-                    render_key(&mut framebuffer, &player, &texture_cache);
+                    // Renderizar llaves si no han sido recolectadas
+                    if !game_state.has_key {
+                        for key in &keys {
+                            draw_sprite(&mut framebuffer, &player, key, &texture_cache);
+                        }
+                    }
                 }
+                
+                // Dibujar barra de vida
+                draw_life_bar(&mut framebuffer, &game_state, &font);
                 
                 if !window.is_key_down(KeyboardKey::KEY_M) {
                     render_minimap(
@@ -485,9 +691,32 @@ fn main() {
                     );
                 }
                 
-                // Volver al menú si se presiona ESC
                 if window.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
-                    game_state = GameState::MainMenu;
+                    screen_state = ScreenState::MainMenu;
+                }
+            }
+            
+            ScreenState::Win => {
+                framebuffer.clear();
+                draw_win_screen(&mut framebuffer, &font, &game_state);
+                
+                if window.is_key_pressed(KeyboardKey::KEY_SPACE) {
+                    screen_state = ScreenState::MainMenu;
+                }
+                if window.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    screen_state = ScreenState::MainMenu;
+                }
+            }
+            
+            ScreenState::Lose => {
+                framebuffer.clear();
+                draw_lose_screen(&mut framebuffer, &font);
+                
+                if window.is_key_pressed(KeyboardKey::KEY_SPACE) {
+                    screen_state = ScreenState::MainMenu;
+                }
+                if window.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    screen_state = ScreenState::MainMenu;
                 }
             }
         }
