@@ -193,6 +193,12 @@ pub fn render_3d(
         let intersect = cast_ray(framebuffer, &maze, &player, a, block_size, false);
         let d = intersect.distance;
         let c = intersect.impact;
+        
+        // Saltar si el rayo choca con 'g' (lo renderizaremos como sprite)
+        if c == 'g' {
+            continue;
+        }
+        
         let corrected_distance = d * angle_diff.cos() as f32;
         let stake_height = (hh / corrected_distance)*100.0;
         let half_stake_height = stake_height / 2.0;
@@ -202,18 +208,7 @@ pub fn render_3d(
         for y in stake_top..stake_bottom {
             let tx = intersect.tx;
             let ty = ((y as f32 - stake_top as f32) / (stake_bottom as f32 - stake_top as f32))*128.0;
-            
-            // Si es la meta 'g', usar color verde en lugar de textura
-            let color = if c == 'g' {
-                // Crear un patrón de rayas verdes para la meta
-                if (y / 10) % 2 == 0 {
-                    Color::GREEN
-                } else {
-                    Color::DARKGREEN
-                }
-            } else {
-                texture_cache.get_pixel_color(c, tx as u32, ty as u32)
-            };
+            let color = texture_cache.get_pixel_color(c, tx as u32, ty as u32);
 
             framebuffer.set_current_color(color);
             framebuffer.set_pixel(i, y as i32);
@@ -464,7 +459,6 @@ fn check_key_collision(player: &Player, keys: &[Key], game_state: &mut GameState
 }
 
 fn check_goal_collision(player: &Player, maze: &Maze, game_state: &GameState, block_size: usize) -> bool {
-    // Simplemente verificar si está en la celda 'g' y tiene la llave
     let player_grid_x = (player.pos.x / block_size as f32) as usize;
     let player_grid_y = (player.pos.y / block_size as f32) as usize;
     
@@ -525,6 +519,35 @@ fn get_keys() -> Vec<Key> {
     vec![
         Key::new(250.0, 250.0, 'k'),
     ]
+}
+
+fn draw_goal_sprite(
+    framebuffer: &mut Framebuffer,
+    player: &Player,
+    maze: &Maze,
+    texture_manager: &TextureManager,
+    block_size: usize,
+) {
+    // Buscar la posición de la meta 'g' en el laberinto
+    for (j, row) in maze.iter().enumerate() {
+        for (i, &cell) in row.iter().enumerate() {
+            if cell == 'g' {
+                let goal_pos = Vector2::new(
+                    (i * block_size + block_size / 2) as f32,
+                    (j * block_size + block_size / 2) as f32
+                );
+                
+                // Crear un "sprite" temporal para la meta
+                let goal_sprite = Key {
+                    pos: goal_pos,
+                    texture_key: 'g', // Usar 'g' como identificador de textura
+                };
+                
+                // Usar la misma función que para dibujar la llave
+                draw_sprite(framebuffer, player, &goal_sprite, texture_manager);
+            }
+        }
+    }
 }
 
 fn main() {
@@ -680,12 +703,16 @@ fn main() {
                     render_maze(&mut framebuffer, &maze, block_size, &player);
                 } else {
                     render_3d(&mut framebuffer, &maze, block_size, &player, &texture_cache);
+                    
                     // Renderizar llaves si no han sido recolectadas
                     if !game_state.has_key {
                         for key in &keys {
                             draw_sprite(&mut framebuffer, &player, key, &texture_cache);
                         }
                     }
+                    
+                    // Renderizar la meta como sprite (siempre visible)
+                    draw_goal_sprite(&mut framebuffer, &player, &maze, &texture_cache, block_size);
                 }
                 
                 // Dibujar barra de vida

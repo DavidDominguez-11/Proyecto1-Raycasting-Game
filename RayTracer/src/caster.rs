@@ -29,8 +29,7 @@ pub fn cast_ray(
         let i = x / block_size;
         let j = y / block_size;
         
-        // Considerar 'g' como espacio vacío para el raycasting
-        // Solo paredes reales ('+', '-', '|', etc.) deben bloquear los rayos
+        // 'g' debe ser transparente para los rayos (como ' ')
         if maze[j][i] != ' ' && maze[j][i] != 'g' {
             let hitx = x - i * block_size;
             let hity = y - j * block_size;

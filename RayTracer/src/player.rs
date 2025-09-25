@@ -46,13 +46,10 @@ pub fn process_events(
         let grid_x = next_pos.x as usize / block_size;
         let grid_y = next_pos.y as usize / block_size;
 
-        // Verificamos si la nueva posición es un espacio vacío O la meta ('g')
-        // y está dentro de los límites.
+        // Permitir movimiento en espacios vacíos Y en la meta ('g')
         if grid_y < maze.len() && grid_x < maze[grid_y].len() && 
-           (maze[grid_y][grid_x] == ' ' || maze[grid_y][grid_x] == 'g') {
-            // Si el camino está libre (espacio o meta), actualizamos la posición.
+            (maze[grid_y][grid_x] == ' ' || maze[grid_y][grid_x] == 'g') {
             player.pos = next_pos;
         }
-        // Si la condición no se cumple (es una pared), no hacemos nada.
     }
 }
