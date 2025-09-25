@@ -9,6 +9,7 @@ mod caster;
 mod textures;
 mod key;
 mod text;
+mod audio;
 
 use raylib::prelude::*;
 use std::thread;
@@ -21,6 +22,7 @@ use std::f32::consts::PI;
 use textures::TextureManager;
 use key::Key;
 use text::Font;
+use audio::AudioPlayer;
 
 const TRANSPARENT_COLOR: Color = Color::new(0, 0, 0, 0);
 const MAX_LIFE: f32 = 999.0; // 60 segundos de vida máxima
@@ -584,6 +586,12 @@ fn main() {
 
     let minimap_size = 150;
     let minimap_position = (window_width as i32 - minimap_size as i32 - 20, 20);
+
+    let audio_player = AudioPlayer::default();
+    if let Err(e) = audio_player.play_background_music("assets/sounds/game_music.mp3") {
+        eprintln!("Error al cargar la música de fondo: {}", e);
+    }
+    audio_player.set_volume(0.3);
     
     while !window.window_should_close() {
         match screen_state {
