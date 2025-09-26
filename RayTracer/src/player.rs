@@ -1,7 +1,6 @@
 use raylib::prelude::*;
 use std::f32::consts::PI;
 use crate::maze::Maze;
-use std::time::Duration;
 
 pub struct Player {
     pub pos: Vector2,
@@ -14,7 +13,7 @@ pub fn process_events(
     player: &mut Player,
     maze: &Maze,
     block_size: usize,
-) {
+) -> bool {
     const MOVE_SPEED: f32 = 8.0;
     const ROTATION_SPEED: f32 = PI / 20.0;
 
@@ -48,6 +47,8 @@ pub fn process_events(
             && (maze[grid_y][grid_x] == ' ' || maze[grid_y][grid_x] == 'g')
         {
             player.pos = next_pos;
+            return true;
         }
     }
+    false
 }

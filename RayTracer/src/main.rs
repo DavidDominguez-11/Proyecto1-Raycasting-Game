@@ -592,6 +592,10 @@ fn main() {
         eprintln!("Error al cargar la música de fondo: {}", e);
     }
     audio_player.set_volume(0.3);
+
+    // Control de cadencia para el sonido de pasos
+    let mut last_step_time = Instant::now();
+    let step_cooldown = Duration::from_millis(250);
     
     while !window.window_should_close() {
         match screen_state {
@@ -705,7 +709,16 @@ fn main() {
                     }
                 }
 
-                process_events(&window, &mut player, &maze, block_size);
+                let moved = process_events(&window, &mut player, &maze, block_size);
+                if moved && (window.is_key_down(KeyboardKey::KEY_UP) || window.is_key_down(KeyboardKey::KEY_DOWN)) {
+                    let now = Instant::now();
+                    if now.duration_since(last_step_time) >= step_cooldown {
+                        if let Err(e) = audio_player.play_sfx_once("assets/sounds/step.mp3") {
+                            eprintln!("Error al reproducir sonido de paso: {}", e);
+                        }
+                        last_step_time = now;
+                    }
+                }
 
                 if window.is_key_down(KeyboardKey::KEY_M) {
                     render_maze(&mut framebuffer, &maze, block_size, &player);
