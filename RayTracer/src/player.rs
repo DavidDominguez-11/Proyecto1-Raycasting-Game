@@ -16,6 +16,7 @@ pub fn process_events(
 ) -> bool {
     const MOVE_SPEED: f32 = 8.0;
     const ROTATION_SPEED: f32 = PI / 20.0;
+    const MOUSE_SENSITIVITY: f32 = 0.003;
 
     if window.is_key_down(KeyboardKey::KEY_LEFT) {
         player.a -= ROTATION_SPEED;
@@ -23,6 +24,16 @@ pub fn process_events(
     if window.is_key_down(KeyboardKey::KEY_RIGHT) {
         player.a += ROTATION_SPEED;
     }
+
+    // Mouse rotation (only affects angle)
+    let mouse_delta = window.get_mouse_delta();
+    if mouse_delta.x != 0.0 {
+        player.a += mouse_delta.x * MOUSE_SENSITIVITY;
+    }
+
+    // Normalize angle to [-PI, PI]
+    if player.a > PI { player.a -= 2.0 * PI; }
+    if player.a < -PI { player.a += 2.0 * PI; }
 
     let mut next_pos = player.pos;
     let mut moved = false;
