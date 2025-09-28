@@ -13,6 +13,7 @@ mod audio;
 
 use raylib::prelude::*;
 use std::thread;
+use rand::prelude::*;
 use std::time::{Duration, Instant};
 use player::{Player, process_events};
 use framebuffer::Framebuffer;
@@ -20,12 +21,12 @@ use maze::{Maze,load_maze};
 use caster::{cast_ray, Intersect};
 use std::f32::consts::PI;
 use textures::TextureManager;
-use key::Key;
+use key::{Key, Battery};
 use text::Font;
 use audio::AudioPlayer;
 
 const TRANSPARENT_COLOR: Color = Color::new(0, 0, 0, 0);
-const MAX_LIFE: f32 = 999.0; // 60 segundos de vida máxima
+const MAX_LIFE: f32 = 120.0; // 60 segundos de vida máxima
 
 struct GameState {
     life: f32,
@@ -55,6 +56,10 @@ impl GameState {
 
     fn collect_key(&mut self) {
         self.has_key = true;
+    }
+
+    fn add_time(&mut self, time: f32) {
+        self.life = (self.life + time).min(MAX_LIFE); // No exceder el tiempo máximo
     }
 
     fn reset(&mut self) {
@@ -629,6 +634,157 @@ fn apply_general_darkness(framebuffer: &mut Framebuffer, window_width: i32, wind
     }
 }
 
+// --- FUNCIONES PARA BATERÍAS ---
+fn initialize_batteries(maze: &Maze, block_size: usize) -> Vec<Battery> {
+    let mut batteries = Vec::new();
+    let mut rng = thread_rng();
+
+    // Buscar celdas vacías para posicionar las baterías
+    for _ in 0..2 { // Ejemplo: 2 baterías
+        let mut placed = false;
+        let mut attempts = 0;
+        while !placed && attempts < 100 { // Evitar bucles infinitos
+            let y = rng.gen_range(0..maze.len());
+            let x = rng.gen_range(0..maze[y].len());
+            if maze[y][x] == ' ' {
+                // Calcular posición en coordenadas del mundo
+                let pos_x = (x * block_size + block_size / 2) as f32;
+                let pos_y = (y * block_size + block_size / 2) as f32;
+                batteries.push(Battery::new(pos_x, pos_y, ['b', 'c', 'd'])); // Usar las 3 claves para la animación
+                placed = true;
+            }
+            attempts += 1;
+        }
+    }
+    batteries
+}
+
+fn update_batteries(batteries: &mut Vec<Battery>, maze: &Maze, block_size: usize, dt: f32) {
+    let mut rng = thread_rng();
+    for battery in batteries {
+        // Actualizar animación
+        battery.frame_timer += dt;
+        if battery.frame_timer >= battery.frame_duration {
+            battery.frame_timer -= battery.frame_duration;
+            battery.current_frame = (battery.current_frame + 1) % battery.texture_keys.len();
+        }
+
+        // Actualizar movimiento
+        battery.move_timer += dt;
+        if battery.move_timer >= battery.move_duration {
+            battery.move_timer -= battery.move_duration;
+            // Buscar nueva posición aleatoria vecina
+            let current_grid_x = (battery.pos.x / block_size as f32) as usize;
+            let current_grid_y = (battery.pos.y / block_size as f32) as usize;
+            let directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]; // Arriba, Derecha, Abajo, Izquierda
+            let valid_moves: Vec<(isize, isize)> = directions.iter()
+                .filter(|&&(dx, dy)| {
+                    let new_x = current_grid_x as isize + dx;
+                    let new_y = current_grid_y as isize + dy;
+                    new_x >= 0 && new_x < maze[0].len() as isize &&
+                    new_y >= 0 && new_y < maze.len() as isize &&
+                    maze[new_y as usize][new_x as usize] == ' '
+                })
+                .cloned()
+                .collect();
+
+            if !valid_moves.is_empty() {
+                let &(dx, dy) = valid_moves.choose(&mut rng).unwrap();
+                battery.target_pos = Vector2::new(
+                    ((current_grid_x as isize + dx) * block_size as isize + block_size as isize / 2) as f32,
+                    ((current_grid_y as isize + dy) * block_size as isize + block_size as isize / 2) as f32,
+                );
+            }
+            // Si no hay movimientos válidos, se queda quieta, lo cual está bien.
+        }
+
+        // Mover hacia la posición objetivo (movimiento suave)
+        let move_speed = 50.0 * dt; // Ajusta la velocidad de movimiento
+        let dx = battery.target_pos.x - battery.pos.x;
+        let dy = battery.target_pos.y - battery.pos.y;
+        let distance = (dx.powi(2) + dy.powi(2)).sqrt();
+
+        if distance > move_speed {
+            // Mover hacia el objetivo - Calcular la dirección normalizada manualmente
+            let direction_x = dx / distance;
+            let direction_y = dy / distance;
+            battery.pos.x += direction_x * move_speed;
+            battery.pos.y += direction_y * move_speed;
+        } else {
+            // Llegó al objetivo, actualizar posición actual
+            battery.pos = battery.target_pos;
+        }
+    }
+}
+
+
+fn draw_battery(
+    framebuffer: &mut Framebuffer,
+    player: &Player,
+    battery: &Battery,
+    texture_manager: &TextureManager
+) {
+    // Reutilizamos la lógica de draw_sprite, pero usamos la textura del frame actual
+    let sprite_a = (battery.pos.y - player.pos.y).atan2(battery.pos.x - player.pos.x);
+    let mut angle_diff = sprite_a - player.a;
+    while angle_diff > PI {
+        angle_diff -= 2.0 * PI;
+    }
+    while angle_diff < -PI {
+        angle_diff += 2.0 * PI;
+    }
+    if angle_diff.abs() > player.fov / 2.0 {
+        return;
+    }
+    let sprite_d = ((player.pos.x - battery.pos.x).powi(2) + (player.pos.y - battery.pos.y).powi(2)).sqrt();
+    // near plane           far plane
+    if sprite_d < 50.0 || sprite_d > 1000.0 {
+        return;
+    }
+    let screen_height = framebuffer.height as f32;
+    let screen_width = framebuffer.width as f32;
+    let sprite_size = (screen_height / sprite_d) * 70.0; // Tamaño base, ajustable
+    let screen_x = ((angle_diff / player.fov) + 0.5) * screen_width;
+    let start_x = (screen_x - sprite_size / 2.0).max(0.0) as usize;
+    let start_y = (screen_height / 2.0 - sprite_size / 2.0).max(0.0) as usize;
+    let sprite_size_usize = sprite_size as usize;
+    let end_x = (start_x + sprite_size_usize).min(framebuffer.width as usize);
+    let end_y = (start_y + sprite_size_usize).min(framebuffer.height as usize);
+
+    let texture_key = battery.texture_keys[battery.current_frame]; // Obtener la clave de la textura del frame actual
+
+    for x in start_x..end_x {
+        for y in start_y..end_y {
+            let tx = ((x - start_x) * 128 / sprite_size_usize) as u32;
+            let ty = ((y - start_y) * 128 / sprite_size_usize) as u32;
+            let color = texture_manager.get_pixel_color(texture_key, tx, ty);
+            if color != TRANSPARENT_COLOR {
+                framebuffer.set_current_color(color);
+                framebuffer.set_pixel(x as i32, y as i32);
+            }
+        }
+    }
+}
+
+fn check_battery_collision(player: &Player, batteries: &mut Vec<Battery>, game_state: &mut GameState, block_size: usize) -> bool {
+    let player_grid_x = (player.pos.x / block_size as f32) as usize;
+    let player_grid_y = (player.pos.y / block_size as f32) as usize;
+
+    for i in (0..batteries.len()).rev() { // Iterar al revés para poder eliminar elementos
+        let battery = &batteries[i];
+        let battery_grid_x = (battery.pos.x / block_size as f32) as usize;
+        let battery_grid_y = (battery.pos.y / block_size as f32) as usize;
+
+        if player_grid_x == battery_grid_x && player_grid_y == battery_grid_y {
+            // Colisión detectada
+            game_state.add_time(30.0); // Añadir 30 segundos de vida
+            batteries.remove(i); // Eliminar la batería recolectada
+            return true; // Indicar que se recolectó una batería
+        }
+    }
+    false // No se recolectó ninguna batería
+}
+
 fn main() {
     let window_width = 1300;
     let window_height = 900;
@@ -661,6 +817,8 @@ fn main() {
     let texture_cache = TextureManager::new(&mut window, &raylib_thread);
     let mut game_state = GameState::new();
 
+    let mut batteries: Vec<Battery> = Vec::new();
+
     let minimap_size = 150;
     let minimap_position = (window_width as i32 - minimap_size as i32 - 20, 20);
 
@@ -674,9 +832,16 @@ fn main() {
     let mut last_step_time = Instant::now();
     let step_cooldown = Duration::from_millis(250);
 
+    let mut last_time = Instant::now();
+
     let mut cursor_hidden = false;
     
     while !window.window_should_close() {
+        let current_time = Instant::now();
+        // Calcular dt (delta time) aquí, en el ámbito del bucle principal
+        let dt = current_time.duration_since(last_time).as_secs_f32();
+        last_time = current_time; // Actualizar el tiempo anterior
+        
         match screen_state {
             ScreenState::MainMenu => {
                 // Mostrar cursor en el menú
@@ -701,6 +866,8 @@ fn main() {
                     
                     maze = load_maze(maze_file);
                     game_state.reset();
+                    // --- INICIALIZAR BATERÍAS DESPUÉS DE CARGAR EL LABERINTO ---
+                    batteries = initialize_batteries(&maze, block_size);
                     
                     // Posicionar al jugador en un lugar seguro
                     for (j, row) in maze.iter().enumerate() {
@@ -770,11 +937,16 @@ fn main() {
                     screen_state = ScreenState::Lose;
                     continue;
                 }
+
+                // Actualizar baterías (movimiento y animación)
+                update_batteries(&mut batteries, &maze, block_size, dt);
                 
                 let keys = get_keys();
                 if check_key_collision(&player, &keys, &mut game_state, block_size) {
                     // La llave fue recolectada (se muestra en la UI)
                 }
+
+                
                 
                 if check_goal_collision(&player, &maze, &game_state, block_size) {
                     screen_state = ScreenState::Win;
@@ -816,6 +988,8 @@ fn main() {
                     }
                 }
 
+                
+
                 if window.is_key_down(KeyboardKey::KEY_M) {
                     render_maze(&mut framebuffer, &maze, block_size, &player);
                 } else {
@@ -830,6 +1004,19 @@ fn main() {
                     
                     // Renderizar la meta como sprite (siempre visible)
                     draw_goal_sprite(&mut framebuffer, &player, &maze, &texture_cache, block_size);
+
+                }
+                // Dibujar baterías
+                for battery in &batteries {
+                    draw_battery(&mut framebuffer, &player, battery, &texture_cache);
+                }
+
+                // Verificar colisión con baterías
+                if check_battery_collision(&player, &mut batteries, &mut game_state, block_size) {
+                    // Batería recolectada (opcional: reproducir sonido)
+                    if let Err(e) = audio_player.play_sfx_once("assets/sounds/battery_pickup.mp3") { // Asegúrate de tener este archivo
+                        eprintln!("Error al reproducir sonido de batería: {}", e);
+                    }
                 }
 
                 // --- APLICAR EFECTO DE LINTERNA ---

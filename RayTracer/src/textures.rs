@@ -1,19 +1,15 @@
-// textures.rs
-
+// src/textures.rs
 use raylib::prelude::*;
 use std::collections::HashMap;
 use std::slice;
-
 pub struct TextureManager {
     images: HashMap<char, Image>,       // Store images for pixel access
     textures: HashMap<char, Texture2D>, // Store GPU textures for rendering
 }
-
 impl TextureManager {
     pub fn new(rl: &mut RaylibHandle, thread: &RaylibThread) -> Self {
         let mut images = HashMap::new();
         let mut textures = HashMap::new();
-
         // Map characters to texture file paths
         let texture_files = vec![
             ('+', "assets/textures/wall4.png"),
@@ -21,19 +17,19 @@ impl TextureManager {
             ('|', "assets/textures/wall1.png"),
             ('g', "assets/textures/wall5.png"),
             ('k', "assets/textures/key.png"),
+            ('b', "assets/textures/battery1.png"), // Frame 1
+            ('c', "assets/textures/battery2.png"), // Frame 2
+            ('d', "assets/textures/battery3.png"), // Frame 3
             ('#', "assets/textures/wall3.png"), // default/fallback
         ];
-
         for (ch, path) in texture_files {
             let image = Image::load_image(path).expect(&format!("Failed to load image {}", path));
             let texture = rl.load_texture(thread, path).expect(&format!("Failed to load texture {}", path));
             images.insert(ch, image);
             textures.insert(ch, texture);
         }
-
         TextureManager { images, textures }
     }
-
     pub fn get_pixel_color(&self, ch: char, tx: u32, ty: u32) -> Color {
         if let Some(image) = self.images.get(&ch) {
             let x = tx.min(image.width as u32 - 1) as i32;
@@ -43,34 +39,25 @@ impl TextureManager {
             Color::WHITE
         }
     }
-
     pub fn get_texture(&self, ch: char) -> Option<&Texture2D> {
         self.textures.get(&ch)
     }
 }
-
 fn get_pixel_color(image: &Image, x: i32, y: i32) -> Color {
     let width = image.width as usize;
     let height = image.height as usize;
-
     if x < 0 || y < 0 || x as usize >= width || y as usize >= height {
         return Color::WHITE;
     }
-
     let x = x as usize;
     let y = y as usize;
-
     let data_len = width * height * 4;
-
     unsafe {
         let data = slice::from_raw_parts(image.data as *const u8, data_len);
-
         let idx = (y * width + x) * 4;
-
         if idx + 3 >= data_len {
             return Color::WHITE;
         }
-
         Color::new(data[idx], data[idx + 1], data[idx + 2], data[idx + 3])
     }
 }

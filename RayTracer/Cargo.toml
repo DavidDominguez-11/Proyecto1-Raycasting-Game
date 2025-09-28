@@ -10,3 +10,4 @@ debug = false
 [dependencies]
 raylib = "5.5.1"
 rodio = "0.17.1"
+rand = "0.8"
