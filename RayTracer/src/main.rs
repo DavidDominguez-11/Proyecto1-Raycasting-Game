@@ -31,6 +31,7 @@ struct GameState {
     life: f32,
     game_start_time: Instant,
     has_key: bool,
+    flashlight_on: bool,
 }
 
 impl GameState {
@@ -39,6 +40,7 @@ impl GameState {
             life: MAX_LIFE,
             game_start_time: Instant::now(),
             has_key: false,
+            flashlight_on: false,
         }
     }
 
@@ -59,6 +61,7 @@ impl GameState {
         self.life = MAX_LIFE;
         self.game_start_time = Instant::now();
         self.has_key = false;
+        self.flashlight_on = false;
     }
 }
 
@@ -552,6 +555,80 @@ fn draw_goal_sprite(
     }
 }
 
+// --- NUEVAS FUNCIONES PARA EL EFECTO LINTERNA---
+// Aplica un efecto de linterna más realista: gradiente radial
+fn apply_flashlight_effect(framebuffer: &mut Framebuffer, window_width: i32, window_height: i32) {
+    let center_x = (window_width / 2) as f32;
+    let center_y = (window_height / 2) as f32;
+    // Definir el radio máximo de la linterna (ajusta este valor)
+    let max_radius = (window_width.min(window_height) as f32) * 0.6; // 60% del lado más corto
+    // Definir el radio donde la luz comienza a atenuarse fuertemente (ángulo cónico)
+    let inner_radius = max_radius * 0.3; // 30% del radio máximo
+
+    for y in 0..window_height {
+        for x in 0..window_width {
+            let dx = x as f32 - center_x;
+            let dy = y as f32 - center_y;
+            let distance = (dx.powi(2) + dy.powi(2)).sqrt();
+
+            // Calcular intensidad basada en la distancia
+            let intensity = if distance <= inner_radius {
+                1.0 // Área central completamente iluminada
+            } else if distance <= max_radius {
+                // Gradiente suave entre inner_radius y max_radius
+                // Usamos una curva cuadrática para una caída más natural
+                let t = (distance - inner_radius) / (max_radius - inner_radius);
+                (1.0 - t).powi(2).max(0.0) // Asegura que no sea negativo
+            } else {
+                0.0 // Fuera del radio, completamente oscuro
+            };
+
+            // Obtener el color actual del píxel
+            if let Some(current_color) = framebuffer.get_pixel_color(x, y) {
+                // Calcular el factor de oscuridad (opuesto a la intensidad)
+                let darkness_factor = 1.0 - intensity;
+
+                // Definir el color base de la oscuridad (negro)
+                let dark_r = 0.0;
+                let dark_g = 0.0;
+                let dark_b = 0.0;
+
+                // Mezclar el color actual con el negro basado en el factor de oscuridad
+                // Usamos una interpolación lineal ponderada
+                let r = (current_color.r as f32 * intensity + dark_r * darkness_factor) as u8;
+                let g = (current_color.g as f32 * intensity + dark_g * darkness_factor) as u8;
+                let b = (current_color.b as f32 * intensity + dark_b * darkness_factor) as u8;
+                let a = current_color.a; // Mantener la transparencia original
+
+                framebuffer.set_current_color(Color::new(r, g, b, a));
+                framebuffer.set_pixel(x, y);
+            }
+        }
+    }
+}
+
+// Opcional: Aplica una oscuridad general cuando la linterna está apagada
+fn apply_general_darkness(framebuffer: &mut Framebuffer, window_width: i32, window_height: i32) {
+    // Definir el color base de la oscuridad (negro con cierta transparencia)
+    let darkness_color = Color::new(0, 0, 0, 200); // Negro semi-transparente
+
+    for y in 0..window_height {
+        for x in 0..window_width {
+            // Obtener el color actual del píxel
+            if let Some(current_color) = framebuffer.get_pixel_color(x, y) {
+                // Mezclar el color actual con el color de oscuridad
+                // Usamos una fórmula simple de mezcla (puedes probar otras)
+                let r = ((current_color.r as u16 + darkness_color.r as u16) / 2) as u8;
+                let g = ((current_color.g as u16 + darkness_color.g as u16) / 2) as u8;
+                let b = ((current_color.b as u16 + darkness_color.b as u16) / 2) as u8;
+                let a = current_color.a; // Mantener la transparencia original
+                framebuffer.set_current_color(Color::new(r, g, b, a));
+                framebuffer.set_pixel(x, y);
+            }
+        }
+    }
+}
+
 fn main() {
     let window_width = 1300;
     let window_height = 900;
@@ -703,12 +780,17 @@ fn main() {
                     screen_state = ScreenState::Win;
                     continue;
                 }
+
+                // --- GESTIÓN DE LA LINTERNA ---
+                if window.is_key_pressed(KeyboardKey::KEY_E) { // Usamos 'E' para encender/apagar
+                    game_state.flashlight_on = !game_state.flashlight_on;
+                }
                 
                 // Renderizado normal del juego
                 let half_height = window_height as u32 / 2;
                 
                 // Cielo
-                framebuffer.set_current_color(Color::new(135, 206, 235, 255));
+                framebuffer.set_current_color(Color::new(20, 20, 20, 255));
                 for y in 0..half_height {
                     for x in 0..window_width as u32 {
                         framebuffer.set_pixel(x as i32, y as i32);
@@ -716,7 +798,7 @@ fn main() {
                 }
                 
                 // Piso
-                framebuffer.set_current_color(Color::new(168, 168, 168, 168));
+                framebuffer.set_current_color(Color::new(10, 10, 10, 255));
                 for y in half_height..window_height as u32 {
                     for x in 0..window_width as u32 {
                         framebuffer.set_pixel(x as i32, y as i32);
@@ -724,7 +806,7 @@ fn main() {
                 }
 
                 let moved = process_events(&window, &mut player, &maze, block_size);
-                if moved && (window.is_key_down(KeyboardKey::KEY_UP) || window.is_key_down(KeyboardKey::KEY_DOWN)) {
+                if moved && (window.is_key_down(KeyboardKey::KEY_UP) || window.is_key_down(KeyboardKey::KEY_DOWN) || window.is_key_down(KeyboardKey::KEY_A) || window.is_key_down(KeyboardKey::KEY_S)) {
                     let now = Instant::now();
                     if now.duration_since(last_step_time) >= step_cooldown {
                         if let Err(e) = audio_player.play_sfx_once("assets/sounds/step.mp3") {
@@ -749,6 +831,15 @@ fn main() {
                     // Renderizar la meta como sprite (siempre visible)
                     draw_goal_sprite(&mut framebuffer, &player, &maze, &texture_cache, block_size);
                 }
+
+                // --- APLICAR EFECTO DE LINTERNA ---
+                if game_state.flashlight_on {
+                    apply_flashlight_effect(&mut framebuffer, window_width, window_height);
+                } else {
+                    // Opcional: Si la linterna está apagada, aplicar un efecto de oscuridad general
+                    apply_general_darkness(&mut framebuffer, window_width, window_height);
+                }
+                // --- FIN EFECTO ---
                 
                 // Dibujar barra de vida
                 draw_life_bar(&mut framebuffer, &game_state, &font);
