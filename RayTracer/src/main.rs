@@ -596,10 +596,18 @@ fn main() {
     // Control de cadencia para el sonido de pasos
     let mut last_step_time = Instant::now();
     let step_cooldown = Duration::from_millis(250);
+
+    let mut cursor_hidden = false;
     
     while !window.window_should_close() {
         match screen_state {
             ScreenState::MainMenu => {
+                // Mostrar cursor en el menú
+                if cursor_hidden {
+                    window.enable_cursor();
+                    cursor_hidden = false;
+                }
+
                 if window.is_key_pressed(KeyboardKey::KEY_UP) {
                     selected_level = if selected_level > 1 { selected_level - 1 } else { 3 };
                 }
@@ -674,6 +682,12 @@ fn main() {
                 // Actualizar vida
                 game_state.update_life();
                 
+                // Ocultar cursor cuando se está jugando
+                if !cursor_hidden {
+                    window.disable_cursor();
+                    cursor_hidden = true;
+                }
+
                 // Verificar condiciones de fin de juego
                 if !game_state.is_alive() {
                     screen_state = ScreenState::Lose;
@@ -758,6 +772,12 @@ fn main() {
             ScreenState::Win => {
                 framebuffer.clear();
                 draw_win_screen(&mut framebuffer, &font, &game_state);
+
+                // Mostrar cursor en pantalla de victoria
+                if cursor_hidden {
+                    window.enable_cursor();
+                    cursor_hidden = false;
+                }
                 
                 if window.is_key_pressed(KeyboardKey::KEY_SPACE) {
                     screen_state = ScreenState::MainMenu;
@@ -770,6 +790,12 @@ fn main() {
             ScreenState::Lose => {
                 framebuffer.clear();
                 draw_lose_screen(&mut framebuffer, &font);
+
+                // Mostrar cursor en pantalla de derrota
+                if cursor_hidden {
+                    window.enable_cursor();
+                    cursor_hidden = false;
+                }
                 
                 if window.is_key_pressed(KeyboardKey::KEY_SPACE) {
                     screen_state = ScreenState::MainMenu;
@@ -782,5 +808,9 @@ fn main() {
         
         framebuffer.swap_buffers(&mut window, &raylib_thread);
         thread::sleep(Duration::from_millis(16));
+    }
+    // Asegurarse de mostrar el cursor al salir
+    if cursor_hidden {
+        window.enable_cursor();
     }
 }
