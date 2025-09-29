@@ -14,6 +14,27 @@ Juego 3D estilo raycasting construido en Rust usando `raylib`. El objetivo es ex
 - Sonidos: música de fondo y efectos (pasos y recolección).
 - Soporte para múltiples niveles basados en archivos `maze*.txt`.
 
+# Enlace al Video de YouTube
+
+[Mira este video tutorial](https://youtu.be/OSI6EssYeH4) donde se muestra el funcionamiento con las siguientes características:
+
+## Funcionalidades Implementadas
+
+| Puntos | Característica |
+|--------|----------------|
+| 15 | Efecto linterna |
+| 20 | Rotar con mouse |
+| 10 | Minimapa esquina |
+| 5 | Música de fondo |
+| 10 | Agregar efecto sonido |
+| 20 | Animar sprite |
+| 5 | Pantalla de bienvenida |
+| 10 | Seleccionar nivel |
+| 10 | Pantalla de éxito |
+| 5 | Control de vida |
+| **110** | **TOTAL** |
+
+
 ## Estructura del proyecto
 
 ```
